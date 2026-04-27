@@ -81,19 +81,20 @@ def listener_thread_func(
     hosts, 
     all_replicas_done_event
 ):
+    # Replica object info.
     host, main_base, listener_base = replica_info
     my_id = replica_obj.id
 
-    # 1. Setup SUB socket to listen to MOVE and DONE from all other replicas' main threads
+    # Setup SUB socket to listen to MOVE and DONE from all other replicas main threads
     sub_socket = zmq_context.socket(zmq.SUB)
     for i in range(num_replicas):
         if i != my_id:
             sub_socket.connect(f"tcp://{hosts[i]}:{main_base + i}")
-            
+    # Subscribe to both MOVE and DONE topics       
     sub_socket.setsockopt_string(zmq.SUBSCRIBE, "MOVE")
     sub_socket.setsockopt_string(zmq.SUBSCRIBE, "DONE")
 
-    # 2. Setup PUB socket to send ACK back when a DONE is received
+    #Setup PUB socket to send ACK back when a DONE is received
     pub_socket = zmq_context.socket(zmq.PUB)
     pub_socket.bind(replica_obj.listener_addr)
 
@@ -109,7 +110,7 @@ def listener_thread_func(
             message = sub_socket.recv_string()
             topic, data_str = message.split(" ", 1)
             data = json.loads(data_str)
-
+            
             if topic == "MOVE":
                 op = MovePayload(data['i'], data['t'], data['p'], data['m'], data['c'])
                 replica_obj.apply_remote_move(op)
@@ -141,19 +142,19 @@ def run_replica(
 ) -> None:
     host, main_base, listener_base = replica_info
 
-    # 1. Create the Replica object
+    #Replica object creation
     replica = Replica(replica_id, host, main_base, listener_base)
 
-    # 2. Create the ZeroMQ context
+    #Create the ZeroMQ context
     zmq_context = zmq.Context()
 
-    # 3. Create and setup the ZeroMQ socket for publishing "MOVE" and "DONE"
+    #Create and setup the ZeroMQ socket for publishing MOVE and DONE messages
     main_pub_socket = zmq_context.socket(zmq.PUB)
     main_pub_socket.bind(replica.main_addr)
 
     time.sleep(1) # Give the socket time to stabilize
 
-    # 4. Create and setup the ZeroMQ socket for getting subscribed to "ACK"
+    #Create and setup the ZeroMQ socket for getting subscribed to ACK 
     main_sub_socket = zmq_context.socket(zmq.SUB)
     for i in range(num_replicas):
         if i != replica_id:
@@ -161,11 +162,11 @@ def run_replica(
             main_sub_socket.connect(f"tcp://{hosts[i]}:{listener_base + i}")
     main_sub_socket.setsockopt_string(zmq.SUBSCRIBE, "ACK")
 
-    # 5. Create threading events
+    #Create threading events
     shutdown_event = threading.Event()
     all_replicas_done_event = threading.Event()
 
-    # 6. Create and start the listener thread
+    #Create and start the listener thread
     listener_thread = threading.Thread(
         target=listener_thread_func,
         args=(replica, zmq_context, shutdown_event, replica_info, num_replicas, hosts, all_replicas_done_event)
@@ -177,7 +178,7 @@ def run_replica(
     counter = 0
     move_generator = get_move_generator(tree_config)
 
-    # 7. Main operational loop
+    #Main loop
     while True:
         # Check if we have reached the max timestamp
         if max_timestamp is not None and replica.current_timestamp() >= max_timestamp:
@@ -204,7 +205,7 @@ def run_replica(
         counter += 1
         time.sleep(0.05) # Prevent overloading the network instantly
 
-    # 8. Generate and broadcast the DONE message
+    #Generate and broadcast the DONE message
     done_data = {'i': replica.id, 't': replica.current_timestamp()}
     done_msg = f"DONE {json.dumps(done_data)}"
 
@@ -233,7 +234,7 @@ def run_replica(
                     except zmq.Again:
                         break # No more messages in the queue
 
-    # 9. Wait for the listener thread to catch up, then shut down
+    #Wait for the listener thread to catch up, then shut down
     all_replicas_done_event.wait(timeout=5.0) 
     shutdown_event.set()
     listener_thread.join()
@@ -252,6 +253,7 @@ def main(
     listener_base,
     max_timestamp = None,
 ) -> None:
+    # A run ID is generated as a random UUID for the current run of the system
     run_id: uuid.UUID = uuid.uuid4()
     os.makedirs("runs", exist_ok = True)
 
@@ -268,7 +270,7 @@ def main(
         
         p = multiprocessing.Process(
             target=run_replica,
-            name=f"Replica-{i}", # The test explicitly requires this name format!
+            name=f"Replica-{i}",
             args=(run_id, tree_config, i, replica_info, num_replicas, hosts, max_timestamp)
         )
         processes.append(p)

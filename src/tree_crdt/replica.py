@@ -54,16 +54,14 @@ class Replica:
             return self.__clock.timestamp
 
     def __apply_move(self, op: MovePayload):
-        """
-        The core Undo-Do-Redo logic for CRDTs.
-        Ensures all replicas end up with the exact same tree state, 
-        even if messages arrive completely out of order.
-        """
+        
+        #The core Undo-Do-Redo logic for CRDTs.
+        #Ensures all replicas end up with the exact same tree state
         with self.__lock:
             op_tuple = (op.timestamp, op.id)
             popped_ops = []
 
-            # 1. UNDO: Pop operations that happened "after" this new one
+            # Undo the operations that happened after the new one. (UNDO)
             while self.__op_log:
                 last_op = self.__op_log[-1]
                 # last_op is: (replica_id, t, old_p, p, m, c)
@@ -81,8 +79,7 @@ class Replica:
                     # The last operation is a predecessor. Stop undoing.
                     break
 
-            # 2. DO: Apply the new operation
-            # Find what the parent was *before* we apply this move, to save in the log
+            #Apply the new operation (DO)
             current_node = self.__tree[op.child]
             old_p = current_node.parent if current_node else None
             
@@ -92,12 +89,12 @@ class Replica:
             # Save to log: (replica_id, t, old_p, p, m, c)
             self.__op_log.append((op.id, op.timestamp, old_p, op.parent, op.metadata, op.child))
 
-            # 3. REDO: Re-apply the popped operations in chronological order
+            # Re apply the popped operations in chronological order (REDO)
             # popped_ops was built newest-to-oldest, so we reverse it to redo
             for redo_op in reversed(popped_ops):
                 r_id, r_t, _, r_p, r_m, r_c = redo_op
                 
-                # Check what the parent is NOW before re-applying
+                # Check what the parent is now before re applying
                 curr_node = self.__tree[r_c]
                 new_old_p = curr_node.parent if curr_node else None
                 
@@ -109,23 +106,23 @@ class Replica:
 
     def apply_local_move(self, parent: int | None, metadata: dict, child: int) -> MovePayload:
         with self.__lock:
-            # 1. Update clock for local action
+            #Update clock for local action
             self.tick_clock()
             
-            # 2. Create the payload
+            # Create the payload
             op = MovePayload(self.id, self.current_timestamp(), parent, metadata, child)
             
-            # 3. Apply the move
+            #Apply the move
             self.__apply_move(op)
             
             return op
 
     def apply_remote_move(self, op: MovePayload):
         with self.__lock:
-            # 1. Sync the Lamport clock with the incoming remote timestamp
+            #Sync the Lamport clock with the incoming remote timestamp
             self.tick_clock(op.timestamp)
             
-            # 2. Apply the move
+            #Apply the move
             self.__apply_move(op)
 
     def __str__(self) -> str:
