@@ -177,11 +177,15 @@ def run_replica(
     counter = 0
     move_generator = get_move_generator(tree_config)
 
+    if replica.id == 2:
+        time.sleep(10)
+
     # 7. Main operational loop
     while True:
         # Check if we have reached the max timestamp
         if max_timestamp is not None and replica.current_timestamp() >= max_timestamp:
             break
+
 
         parent_id, child_id, tree_type = move_generator(counter)
         metadata = {
