@@ -1,0 +1,3 @@
+[TREE STATE]
+Replica 0, tree structure: chain, maximum timestamp: 0
+set()

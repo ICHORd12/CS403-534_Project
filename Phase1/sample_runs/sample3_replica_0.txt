@@ -1,0 +1,10 @@
+[TREE STATE]
+Replica 0, tree structure: chain, maximum timestamp: 8
+{Node(p=None,m={'count': 0, 'timestamp': 1, 'config': 'chain_node', 'replica': 0},c=0),
+ Node(p=0,m={'count': 1, 'timestamp': 2, 'config': 'chain_node', 'replica': 0},c=1),
+ Node(p=1,m={'count': 2, 'timestamp': 3, 'config': 'chain_node', 'replica': 0},c=2),
+ Node(p=2,m={'count': 3, 'timestamp': 4, 'config': 'chain_node', 'replica': 0},c=3),
+ Node(p=3,m={'count': 4, 'timestamp': 5, 'config': 'chain_node', 'replica': 0},c=4),
+ Node(p=4,m={'count': 5, 'timestamp': 6, 'config': 'chain_node', 'replica': 0},c=5),
+ Node(p=5,m={'count': 6, 'timestamp': 7, 'config': 'chain_node', 'replica': 0},c=6),
+ Node(p=6,m={'count': 7, 'timestamp': 8, 'config': 'chain_node', 'replica': 0},c=7)}

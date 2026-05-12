@@ -1,0 +1,16 @@
+[project]
+name = "tree-crdt"
+version = "0.2.0"
+description = "The Phase 2 implementation for the CS 403/534 (Distributed Systems) course project in Sabanci University."
+readme = "README.md"
+
+requires-python = ">=3.10"
+dependencies = [
+    "python-dotenv>=1.2.2,<2",
+    "pyzmq>=27.1.0,<28",
+]
+classifiers = ["Private :: Do Not Upload"]
+
+[build-system]
+requires = ["uv_build>=0.10.9,<1"]
+build-backend = "uv_build"
