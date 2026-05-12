@@ -24,4 +24,4 @@ Replica 0, tree structure: chain, maximum timestamp: 20
  frozenset({Node(i=2,t={0: 105, 1: 106, 2: 107},p=None,m={'status': 'deleted', 'applied': True, 'last_ts': {0: 105, 1: 106, 2: 107}},c=19)}),
  frozenset({Node(i=0,t={0: 85, 1: 82, 2: 84},p=None,m={'status': 'active', 'applied': True},c=78)}),
  frozenset({Node(i=2,t={0: 116, 1: 118, 2: 119},p=18,m={'status': 'active', 'applied': True, 'last_ts': {0: 116, 1: 118, 2: 119}},c=82)}),
- frozenset({Node(i=2,t={0: 95, 1: 94, 2: 97},p=None,m={'status': 'active', 'applied': True, 'last_ts': {0: 95, 1: 94, 2: 97}},c=2082)})]
+ frozenset({Node(i=2,t={0: 95, 1: 94, 2: 97},p=None,m={'status': 'active', 'applied': True, 'last_ts': {0: 95, 1: 94, 2: 97}},c=2082)})] 

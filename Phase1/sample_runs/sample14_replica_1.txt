@@ -1,9 +1,0 @@
-[TREE STATE]
-Replica 1, tree structure: hierarchical, maximum timestamp: 40
-{Node(p=None,m={'count': 0, 'timestamp': 1, 'config': 'root', 'replica': 4},c=0),
- Node(p=0,m={'count': 1, 'timestamp': 6, 'config': 'child', 'replica': 4},c=1),
- Node(p=0,m={'count': 2, 'timestamp': 15, 'config': 'child', 'replica': 3},c=2),
- Node(p=0,m={'count': 3, 'timestamp': 18, 'config': 'child', 'replica': 3},c=3),
- Node(p=1,m={'count': 4, 'timestamp': 25, 'config': 'grandchild', 'replica': 4},c=14),
- Node(p=2,m={'count': 5, 'timestamp': 35, 'config': 'grandchild', 'replica': 1},c=15),
- Node(p=3,m={'count': 6, 'timestamp': 39, 'config': 'grandchild', 'replica': 2},c=16)}

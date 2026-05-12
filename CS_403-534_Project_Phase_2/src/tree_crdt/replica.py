@@ -1,9 +1,13 @@
 import threading
+import copy
+from functools import cmp_to_key
 
 from .clock import Clock, VectorClock
 from .payload import MovePayload
 from .tree import Tree, Node
 
+Node.__repr__ = Node.__str__
+MovePayload.__repr__ = lambda self: f"MovePayload(id={self.id}, timestamp={self.timestamp}, parent={self.parent}, metadata={self.metadata}, child={self.child})"
 
 class Replica:
   """A replica in the Tree CRDT system.
@@ -30,191 +34,164 @@ class Replica:
     """Construct a replica.
     The clock is a VectorClock(id, num_replicas).
     """
-    # TODO: store id, choose clock type based on num_replicas, construct
-    #       Tree (active) and Tree (snapshot), op_log, lock, last_timestamps,
-    #       and the two ZeroMQ addresses.
-    raise NotImplementedError("TODO: implement Replica.__init__")
+    self.__id = id
+    self.__clock = VectorClock(id, num_replicas)
+    self.__tree = Tree()          
+    self.__snapshot = Tree()      
+    self.__op_log = []            
+    self.__last_timestamps = {}   
+    self.__zmq_main_addr = f"tcp://{host}:{main_base + id}"
+    self.__zmq_listener_addr = f"tcp://{host}:{listener_base + id}"
+    self.__lock = threading.RLock()
 
   # ---------------------------------------------------------------------
-  # Public read-only accessors
+  # Properties
   # ---------------------------------------------------------------------
 
   @property
-  def id(self):
-    """Return the replica ID."""
-    raise NotImplementedError("TODO: implement Replica.id")
+  def id(self) -> int:
+    return self.__id
 
   @property
-  def clock(self):
-    """Return a deep copy of the clock."""
-    raise NotImplementedError("TODO: implement Replica.clock")
+  def clock(self) -> Clock:
+    with self.__lock:
+        return copy.deepcopy(self.__clock)
 
   @property
-  def tree(self):
-    """Return a deep copy of the active tree."""
-    raise NotImplementedError("TODO: implement Replica.tree")
-  
+  def tree(self) -> Tree:
+    with self.__lock:
+        return copy.deepcopy(self.__tree)
+
   @property
+  def log(self) -> list:
+    with self.__lock:
+        return copy.deepcopy(self.__op_log)
+
+  @property
+  def main_addr(self) -> str:
+    return self.__zmq_main_addr
+
+  @property
+  def listener_addr(self) -> str:
+    return self.__zmq_listener_addr
+
+  # ---------------------------------------------------------------------
+  # Additional Methods Required for Testing
+  # ---------------------------------------------------------------------
+
+  def record_last_timestamp(self, peer_id: int, timestamp: dict):
+    with self.__lock:
+        self.__last_timestamps[peer_id] = copy.deepcopy(timestamp)
+
+  def get_peer_timestamp(self, peer_id: int) -> dict:
+    with self.__lock:
+        return copy.deepcopy(self.__last_timestamps.get(
+            peer_id, {i: 0 for i in range(len(self.__clock.timestamp))}
+        ))
+
   def tree_snapshot(self):
-    """Return a deep copy of the tree snapshot."""
-    raise NotImplementedError("TODO: implement Replica.tree")
-
-  @property
-  def log(self):
-    """Return a deep copy of the operation log."""
-    raise NotImplementedError("TODO: implement Replica.log")
-
-  @property
-  def last_timestamps(self):
-    """Return a deep copy of the per-peer most-recent-timestamp map."""
-    raise NotImplementedError("TODO: implement Replica.last_timestamps")
-
-  @property
-  def main_addr(self):
-    """Return the ZeroMQ bind address for the main thread."""
-    raise NotImplementedError("TODO: implement Replica.main_addr")
-
-  @property
-  def listener_addr(self):
-    """Return the ZeroMQ bind address for the listener thread."""
-    raise NotImplementedError("TODO: implement Replica.listener_addr")
+    with self.__lock:
+        return self.__snapshot()
 
   # ---------------------------------------------------------------------
-  # Clock helpers
+  # Core API
   # ---------------------------------------------------------------------
 
-  def current_timestamp(self):
-    """Return the current value of the clock's timestamp."""
-    raise NotImplementedError("TODO: implement Replica.current_timestamp")
+  def current_timestamp(self) -> dict[int, int]:
+    """Return the current internal timestamp (used to stamp outgoing moves)."""
+    with self.__lock:
+        return self.__clock.timestamp
 
-  def tick_clock(self, received):
-    """Advance the clock by calling clock.update(received), thread-safely.
+  def tick_clock(self, received: dict[int, int] | None = None) -> dict[int, int]:
+    """Tick the local clock, optionally taking the max with `received`."""
+    with self.__lock:
+        self.__clock.update(received)
+        return self.current_timestamp()
 
-    Pass `received=None` for a local event, or the received timestamp for
-    a remote event. Returns the new timestamp.
+  def apply_local_move(self, parent: int | None, metadata: dict, child: int) -> MovePayload:
+    """Apply a locally generated Move operation.
+    
+    Tick the clock, construct the MovePayload, pass to __apply_move,
+    and return the payload so it can be broadcast.
     """
-    raise NotImplementedError("TODO: implement Replica.tick_clock")
+    with self.__lock:
+        self.tick_clock()
+        op = MovePayload(self.id, self.current_timestamp(), parent, metadata, child)
+        self.__apply_move(op)
+        return op
 
-  # ---------------------------------------------------------------------
-  # Peer-progress bookkeeping (Phase 2)
-  # ---------------------------------------------------------------------
-
-  def record_last_timestamp(self, replica_id, last_timestamp):
-    """Record that peer `replica_id` was most recently seen at `last_timestamp`.
-
-    Called by the listener-side of the receive path whenever a peer
-    advertises its progress (see PDF Section "Tracking Peer Progress").
+  def apply_remote_move(self, op: MovePayload):
+    """Apply a Move operation received from a peer.
+    
+    Tick the clock with the remote timestamp, then pass to __apply_move.
     """
-    raise NotImplementedError("TODO: implement Replica.record_last_timestamp")
+    with self.__lock:
+        self.tick_clock(op.timestamp)
+        self.__apply_move(op)
 
-  def get_peer_timestamp(self, peer_id):
-    """Return the most recent timestamp recorded for peer `peer_id`.
+  def __apply_move(self, op: MovePayload):
+    """Core resolution logic.
 
-    Contract:
-      - If `peer_id` has been registered via `record_last_timestamp`,
-        return the recorded value (deep-copy-safe: the caller must not
-        be able to mutate internal state through the returned value).
-      - If `peer_id` is unknown, return the identity element of the
-        clock's order: all-zeros vectorn(with the same key set as the local clock) 
-        for a vector-clock replica.
-      - The method is read-only and must be thread-safe.
+    Insert the operation into the log. In Phase 2, this MUST maintain
+    a strict total order on the log to guarantee convergence.
+
+    Because concurrent Move operations may arrive out of causal order
+    (or even in order but require conflict resolution that retroactively
+    changes the `applied` flag of a past operation), the simplest strategy
+    is the Log-Insertion-Rollback-Redo sequence:
+
+      1. Insert into the log and re-sort.
+      2. Undo: reset the active tree to the causally stable SNAPSHOT.
+      3. Redo: replay the entire log forward, recalculating Move-Wins.
+      4. Try to compact the log if the causal stability threshold has advanced.
     """
-    raise NotImplementedError("TODO: implement Replica.get_peer_timestamp")
+    with self.__lock:
+        self.__do_operation(op)
+        self.__undo_operations(None)
+        self.__redo_operations(None)
+        self.__compact_log()
 
   # ---------------------------------------------------------------------
-  # Public apply paths
+  # Log compaction
   # ---------------------------------------------------------------------
-
-  def apply_local_move(self, parent, metadata, child):
-    """Generate a local Move operation, apply it, and return the payload.
-
-    The metadata dict MUST contain "status": "active" or "deleted".
-    The library will set "applied" inside __apply_move.
-    """
-    # TODO: tick the clock locally, build the MovePayload, and call
-    #       __apply_move(payload). Return the payload so the caller can
-    #       broadcast it over the wire.
-    raise NotImplementedError("TODO: implement Replica.apply_local_move")
-
-  def apply_remote_move(self, op):
-    """Apply a Move operation received from a peer."""
-    # TODO: tick the clock with op.timestamp, then call __apply_move(op).
-    raise NotImplementedError("TODO: implement Replica.apply_remote_move")
-
-  # ---------------------------------------------------------------------
-  # Internal: ordering, conflict detection, apply, undo/do/redo
-  # ---------------------------------------------------------------------
-  #
-  # The structure below is the recommended decomposition; you may rename,
-  # reorganise, or merge methods as you see fit. The PDF describes the
-  # required SEMANTICS of each step.
-
-  def __is_in_order(self, op):
-    """Return True iff `op` can be appended to the log without disturbing it.
-
-    Vector : op is in order iff op does NOT strictly happen-before the
-             last log entry. (Concurrent ops are in order; they become
-             multi-value peers.)
-    """
-    raise NotImplementedError("TODO: implement Replica.__is_in_order")
-
-  def __get_concurrent_conflicts(self, op):
-    """Return log entries that conflict with `op` (vector clock case).
-
-    Two ops conflict iff their timestamps are concurrent AND they target
-    the same child ID. Used to drive the Move-Wins path of __apply_move.
-    """
-    raise NotImplementedError("TODO: implement Replica.__get_concurrent_conflicts")
-
-  def __find_insertion_point(self, op):
-    """Return the index in op_log at which `op` should be inserted.
-
-    Vector : insert before the first entry whose timestamp is >= op.timestamp
-             under the partial order; concurrent entries are skipped past
-             so that they remain peers rather than being undone/redone.
-    """
-    raise NotImplementedError("TODO: implement Replica.__find_insertion_point")
-
-  def __apply_move(self, op):
-    """The central apply method.
-
-    Required behaviour (see PDF Section "The __apply_move(op) method"):
-
-      1. If using vector clocks, detect log conflicts. For each conflict:
-           - incoming Delete vs. existing alive   --> mark op as
-             "applied": False, append to log, RETURN (no checkpointing).
-           - incoming alive  vs. existing Delete  --> flip the existing
-             entry's "applied" flag to False; remember to rebuild.
-
-      2. If no flag was flipped AND op is in order: append + apply to tree.
-
-      3. Else, run the appropriate recovery sequence:
-           - undo-do-redo (Phase 1, but skipping entries with applied=False),
-             OR
-           - log-insertion-rollback-redo: insert op, restore tree from
-             snapshot, redo all entries currently in the log whose
-             applied=True.
-
-      4. End by attempting log compaction (call __compact_log).
-    """
-    raise NotImplementedError("TODO: implement Replica.__apply_move")
-
-  # ---------------------------------------------------------------------
-  # Internal: checkpointing (Phase 2)
-  # ---------------------------------------------------------------------
-
-  def __min_timestamp(self):
-    """Return the causal-stability threshold (min over peer timestamps)."""
-    raise NotImplementedError("TODO: implement Replica.__min_timestamp")
 
   def __compact_log(self):
-    """Compact the operation log up to the causal-stability threshold.
+    """Compute the causal-stability threshold and compact the log.
+
+    Every time the local clock ticks (via local or remote event),
+    we may have learned that all peers have passed a certain timestamp.
+    That minimum is the causal-stability threshold.
 
     For each log entry whose timestamp is strictly less than the
     threshold, fold its effect (if applied=True) into the snapshot tree
     and drop it from the active log.
     """
-    raise NotImplementedError("TODO: implement Replica.__compact_log")
+    with self.__lock:
+        if not self.__op_log:
+            return
+
+        num_reps = len(self.__clock.timestamp)
+        threshold_vector = {}
+        
+        for k in range(num_reps):
+            min_k = self.__clock.timestamp.get(k, 0)
+            for peer_id in range(num_reps):
+                if peer_id == self.id:
+                    continue
+                peer_ts = self.__last_timestamps.get(peer_id, {})
+                min_k = min(min_k, peer_ts.get(k, 0))
+            threshold_vector[k] = min_k
+        
+        new_log = []
+        for op_tuple in self.__op_log:
+            r_id, r_t, old_p, r_p, r_m, r_c = op_tuple
+            
+            if r_t[r_id] < threshold_vector.get(r_id, 0):
+                self.__snapshot.move(r_id, r_t, r_p, r_m, r_c)
+            else:
+                new_log.append(op_tuple)
+                
+        self.__op_log = new_log
 
   # ---------------------------------------------------------------------
   # Internal: undo / do / redo helpers
@@ -226,22 +203,46 @@ class Replica:
     A reasonable implementation is to restore from the snapshot and
     redo every other log entry whose applied=True.
     """
-    raise NotImplementedError("TODO: implement Replica.__undo_operations")
+    with self.__lock:
+        self.__tree = copy.deepcopy(self.__snapshot)
 
   def __do_operation(self, op, *args, **kwargs):
     """Insert `op` into the log and (if applied=True) apply it to the tree."""
-    raise NotImplementedError("TODO: implement Replica.__do_operation")
+    with self.__lock:
+        last_ts = op.metadata.pop("last_ts", None)
+        op.metadata["applied"] = True
+        if last_ts is not None:
+            op.metadata["last_ts"] = last_ts
+        
+        curr_versions = self.__tree[op.child]
+        old_p = list(curr_versions)[0].parent if curr_versions else None
+        
+        log_entry = (op.id, op.timestamp, old_p, op.parent, op.metadata, op.child)
+        self.__op_log.append(log_entry)
+        
+        def compare_ops(a, b):
+            if VectorClock.timestamp_lt(a[1], b[1]): return -1
+            if VectorClock.timestamp_lt(b[1], a[1]): return 1
+            if a[0] < b[0]: return -1
+            if a[0] > b[0]: return 1
+            return 0
+            
+        self.__op_log.sort(key=cmp_to_key(compare_ops))
 
   def __redo_operations(self, ops):
     """Re-apply each entry in `ops` (whose applied=True) to the tree."""
-    raise NotImplementedError("TODO: implement Replica.__redo_operations")
+    with self.__lock:
+        for log_entry in self.__op_log:
+            r_id, r_t, old_p, r_p, r_m, r_c = log_entry
+            self.__tree.move(r_id, r_t, r_p, r_m, r_c)
 
   # ---------------------------------------------------------------------
   # String representations
   # ---------------------------------------------------------------------
 
   def __str__(self):
-    raise NotImplementedError("TODO: implement Replica.__str__")
+    with self.__lock:
+        return f"Replica(id={self.__id}, clock={self.__clock})"
 
   def __repr__(self):
-    raise NotImplementedError("TODO: implement Replica.__repr__")
+    return self.__str__()

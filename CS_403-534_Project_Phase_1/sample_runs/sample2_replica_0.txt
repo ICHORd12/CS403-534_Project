@@ -1,3 +1,0 @@
-[TREE STATE]
-Replica 0, tree structure: chain, maximum timestamp: 1
-{Node(p=None,m={'count': 0, 'timestamp': 1, 'config': 'chain_node', 'replica': 0},c=0)}

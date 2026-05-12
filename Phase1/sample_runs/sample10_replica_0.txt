@@ -1,8 +1,0 @@
-[TREE STATE]
-Replica 0, tree structure: wide, maximum timestamp: 20
-{Node(p=None,m={'count': 0, 'timestamp': 1, 'config': 'root', 'replica': 2},c=0),
- Node(p=0,m={'count': 1, 'timestamp': 7, 'config': 'wide_child', 'replica': 1},c=1),
- Node(p=0,m={'count': 2, 'timestamp': 9, 'config': 'wide_child', 'replica': 2},c=2),
- Node(p=0,m={'count': 3, 'timestamp': 12, 'config': 'wide_child', 'replica': 2},c=3),
- Node(p=0,m={'count': 4, 'timestamp': 15, 'config': 'wide_child', 'replica': 2},c=4),
- Node(p=0,m={'count': 5, 'timestamp': 20, 'config': 'wide_child', 'replica': 1},c=5)}

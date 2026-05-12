@@ -1,8 +1,0 @@
-[TREE STATE]
-Replica 4, tree structure: chain, maximum timestamp: 40
-{Node(p=None,m={'count': 0, 'timestamp': 3, 'config': 'chain_node', 'replica': 3},c=0),
- Node(p=0,m={'count': 1, 'timestamp': 8, 'config': 'chain_node', 'replica': 4},c=1),
- Node(p=1,m={'count': 2, 'timestamp': 17, 'config': 'chain_node', 'replica': 3},c=2),
- Node(p=2,m={'count': 3, 'timestamp': 25, 'config': 'chain_node', 'replica': 3},c=3),
- Node(p=3,m={'count': 4, 'timestamp': 33, 'config': 'chain_node', 'replica': 3},c=4),
- Node(p=4,m={'count': 5, 'timestamp': 38, 'config': 'chain_node', 'replica': 3},c=5)}

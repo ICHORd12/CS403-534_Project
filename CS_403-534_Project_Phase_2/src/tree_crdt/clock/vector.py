@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from . import VectorClock
+from . import Clock
 
 
 class VectorClock(Clock):
@@ -23,20 +23,18 @@ class VectorClock(Clock):
   def __init__(self, id: int, max_id: int) -> None:
     """Initialise the clock for replica `id` in a system of `max_id` replicas."""
     super().__init__()
-    # TODO: store the replica id and initialise the dict {0: 0, 1: 0, ..., max_id-1: 0}
-    raise NotImplementedError("TODO: implement VectorClock.__init__")
+    self._id = id
+    self._timestamp = {i: 0 for i in range(max_id)}
 
   @property
   def id(self) -> int:
     """Return the ID of the replica that owns this clock."""
-    # TODO
-    raise NotImplementedError("TODO: implement VectorClock.id")
+    return self._id
 
   @property
   def timestamp(self) -> dict[int, int]:
     """Return a DEEP COPY of the current vector timestamp."""
-    # TODO: deepcopy is required; do not return the internal dict directly
-    raise NotImplementedError("TODO: implement VectorClock.timestamp")
+    return deepcopy(self._timestamp)
 
   def update(self, received: dict[int, int] | None) -> None:
     """Update the clock.
@@ -45,12 +43,15 @@ class VectorClock(Clock):
     If `received` is a dict, this is a remote event: take component-wise max
     with `received`, then increment self[self.id] by 1.
     """
-    # TODO
-    raise NotImplementedError("TODO: implement VectorClock.update")
+    if received is not None:
+        for k in self._timestamp.keys():
+            if k in received:
+                self._timestamp[k] = max(self._timestamp[k], received[k])
+    
+    self._timestamp[self._id] = self._timestamp.get(self._id, 0) + 1
 
   def __str__(self) -> str:
-    # TODO
-    raise NotImplementedError("TODO: implement VectorClock.__str__")
+    return str(self._timestamp)
 
   # ---------------------------------------------------------------------
   # Static comparison helpers (Phase 2)
@@ -71,25 +72,53 @@ class VectorClock(Clock):
   @staticmethod
   def timestamp_le(lhs, rhs):
     """Return True iff lhs <= rhs under the appropriate clock order."""
-    # TODO: Implement the <= comparison for both Lamport (int) and
-    #       vector (dict[int, int]) timestamps.
-    raise NotImplementedError("TODO: implement VectorClock.timestamp_le")
+    if type(lhs) != type(rhs):
+        return False
+        
+    if isinstance(lhs, int):
+        return lhs <= rhs
+    elif isinstance(lhs, dict):
+        if lhs.keys() != rhs.keys():
+            return False
+        return all(lhs[k] <= rhs[k] for k in lhs.keys())
+    
+    return False
 
   @staticmethod
   def timestamp_lt(lhs, rhs):
     """Return True iff lhs < rhs under the appropriate clock order."""
-    # TODO: Implement the strict < comparison.
-    raise NotImplementedError("TODO: implement VectorClock.timestamp_lt")
+    if type(lhs) != type(rhs):
+        return False
+        
+    if isinstance(lhs, int):
+        return lhs < rhs
+    elif isinstance(lhs, dict):
+        return VectorClock.timestamp_le(lhs, rhs) and not VectorClock.timestamp_eq(lhs, rhs)
+        
+    return False
 
   @staticmethod
   def timestamp_eq(lhs, rhs):
     """Return True iff lhs == rhs."""
-    # TODO: Implement equality for both clock types.
-    raise NotImplementedError("TODO: implement VectorClock.timestamp_eq")
+    if type(lhs) != type(rhs):
+        return False
+        
+    if isinstance(lhs, int) or isinstance(lhs, dict):
+        return lhs == rhs
+        
+    return False
 
   @staticmethod
   def timestamp_concurrent(lhs, rhs):
     """Return True iff lhs and rhs are concurrent (||) under the partial order."""
-    # TODO: For vector timestamps, two timestamps are concurrent iff
-    #       neither is <= the other. For Lamport, this is identically False.
-    raise NotImplementedError("TODO: implement VectorClock.timestamp_concurrent")
+    if type(lhs) != type(rhs):
+        return False
+        
+    if isinstance(lhs, int):
+        return False
+    elif isinstance(lhs, dict):
+        if lhs.keys() != rhs.keys():
+            return False
+        return not VectorClock.timestamp_le(lhs, rhs) and not VectorClock.timestamp_le(rhs, lhs)
+        
+    return False
